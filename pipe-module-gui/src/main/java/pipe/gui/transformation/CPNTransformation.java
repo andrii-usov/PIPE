@@ -1,47 +1,59 @@
 package pipe.gui.transformation;
 
+import pipe.gui.decomposition.Decomposer;
 import pipe.gui.widget.StateSpaceLoader;
+import uk.ac.imperial.pipe.io.PetriNetIOImpl;
 import uk.ac.imperial.pipe.models.petrinet.PetriNet;
-import uk.ac.imperial.pipe.models.petrinet.Place;
 
 import javax.swing.*;
+import javax.xml.bind.JAXBException;
 import java.awt.*;
 import java.awt.event.ActionEvent;
 import java.awt.event.ActionListener;
-import java.beans.PropertyChangeListener;
+import java.io.File;
 
 /**
  * Created by andrii-usov on 05.05.2015.
  */
 public class CPNTransformation {
 
-    public static final String HTML_STYLE = "body{font-family:Arial,Helvetica,sans-serif;text-align:center;" +
-            "background:#ffffff}" +
-            "td.colhead{font-weight:bold;text-align:center;" +
-            "background:#ffffff}" +
-            "td.rowhead{font-weight:bold;background:#ffffff}" +
-            "td.cell{text-align:center;padding:5px,0}" +
-            "tr.even{background:#a0a0d0}" +
-            "tr.odd{background:#c0c0f0}" +
-            "td.empty{background:#ffffff}";
-
     private StateSpaceLoader stateSpaceLoader;
 
-    //private LayoutForm layoutForm;
-
     private JPanel mainPanel;
+
     private JPanel loadPanel;
+
     private JScrollPane scrollPane;
+
     private JButton button;
+
     private JPanel buttonPanel;
 
-    public CPNTransformation(FileDialog fileDialog) {
-        stateSpaceLoader = new StateSpaceLoader(fileDialog);
+    private JRadioButton saveRadioButton;
+
+    private JRadioButton replaceRadioButton;
+
+    private JTextField textField1;
+
+    private JButton closeButton;
+
+    private FileDialog saveDialog;
+
+    private boolean replaceExisting = true;
+
+    private boolean saveToFile = false;
+
+    private File fileToSave;
+
+    public CPNTransformation(FileDialog loadDialog, FileDialog saveDialog) {
+        this.saveDialog = saveDialog;
+        stateSpaceLoader = new StateSpaceLoader(loadDialog);
         setUp();
     }
 
-    public CPNTransformation(PetriNet petriNet, FileDialog fileDialog) {
-        stateSpaceLoader = new StateSpaceLoader(petriNet, fileDialog);
+    public CPNTransformation(PetriNet petriNet, FileDialog loadDialog, FileDialog saveDialog) {
+        this.saveDialog = saveDialog;
+        stateSpaceLoader = new StateSpaceLoader(petriNet, loadDialog);
         setUp();
     }
 
@@ -49,23 +61,63 @@ public class CPNTransformation {
      * Sets up the UI
      */
     private void setUp() {
+        replaceRadioButton.addActionListener(new ActionListener() {
+            @Override
+            public void actionPerformed(ActionEvent e) {
+                replaceExisting = true;
+                saveToFile = false;
+            }
+        });
+
+        saveRadioButton.addActionListener(new ActionListener() {
+            @Override
+            public void actionPerformed(ActionEvent e) {
+                saveDialog.setMode(FileDialog.SAVE);
+                saveDialog.setTitle("Select file to save Petri net");
+                saveDialog.setVisible(true);
+
+                File[] files = saveDialog.getFiles();
+                if (files.length > 0) {
+                    fileToSave = files[0];
+                    textField1.setText(fileToSave.getName());
+                    replaceExisting = false;
+                    saveToFile = true;
+                }
+            }
+        });
+
         loadPanel.add(stateSpaceLoader.getMainPanel(), 0);
 
         button.addActionListener(new ActionListener() {
             @Override
             public void actionPerformed(ActionEvent e) {
                 PetriNet net = stateSpaceLoader.getPetriNet();
+                CPNTransformer transformer = new CPNTransformer(net);
+                PetriNet newNet = transformer.getTransformed();
 
+                if (replaceExisting) {
+                    Decomposer d = new Decomposer(net);
+                    d.decomposePetriNet();
+                } else if (saveToFile && fileToSave != null) {
+                    PetriNetIOImpl writer;
+                    try {
+                        writer = new PetriNetIOImpl();
+                        writer.writeTo(fileToSave.getAbsolutePath(), newNet);
+                    } catch (JAXBException ex) {
+                        ex.printStackTrace();
+                    }
+                }
             }
         });
-//        resultsPanel.add(resultsPane);
-//        GenerateResultsForm generateResultsForm = new GenerateResultsForm(new GenerateResultsForm.GoAction() {
-//            @Override
-//            public void go(int threads) {
-//                showSteadyState(threads);
-//            }
-//        });
-//        generatePanel.add(generateResultsForm.getPanel());
+
+        closeButton.addActionListener(new ActionListener() {
+            @Override
+            public void actionPerformed(ActionEvent e) {
+                getMainPanel().setVisible(false);
+            }
+        });
+
+
     }
 
     public JPanel getMainPanel() {
@@ -75,4 +127,5 @@ public class CPNTransformation {
     public void setResult(JLayeredPane pane) {
         scrollPane.add(pane);
     }
+
 }

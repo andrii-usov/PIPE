@@ -1,17 +1,11 @@
 package pipe.gui.decomposition;
 
-import org.antlr.v4.runtime.atn.LexerATNSimulator;
 import uk.ac.imperial.pipe.io.PetriNetIOImpl;
 import uk.ac.imperial.pipe.models.petrinet.*;
-import uk.ac.imperial.pipe.models.petrinet.name.NameVisitor;
 import uk.ac.imperial.pipe.models.petrinet.name.NormalPetriNetName;
-import uk.ac.imperial.pipe.models.petrinet.name.PetriNetName;
 
 import javax.xml.bind.JAXBException;
-import java.util.ArrayList;
-import java.util.Collection;
-import java.util.HashMap;
-import java.util.LinkedList;
+import java.util.*;
 
 
 /**
@@ -19,24 +13,21 @@ import java.util.LinkedList;
  */
 public class Decomposer {
 
-//    private enum NodeType {
-//        INBOUND, OUTBOUND, INTERNAL
-//    }
-
     private class FunctionalSubnet {
+
         private PetriNet subNet;
 
-        private ArrayList<Transition> inboundTransitions = new ArrayList<>();
+        public HashSet<Place> inputPlaces = new HashSet<>();
 
-        private ArrayList<Transition> outboundTransitions = new ArrayList<>();
+        public HashSet<Place> outputPlaces = new HashSet<>();
 
-        private ArrayList<Transition> internalTransitions = new ArrayList<>();
+        public HashSet<Place> internalPlaces = new HashSet<>();
 
-        private ArrayList<Place> sources = new ArrayList<>();
+        public HashSet<Transition> X = new HashSet<>();
 
-        private ArrayList<Place> drains = new ArrayList<>();
+        public HashSet<Transition> Y = new HashSet<>();
 
-        private ArrayList<Place> internalPlaces = new ArrayList<>();
+        public HashSet<Transition> Q = new HashSet<>();
 
         public FunctionalSubnet(String name) {
             this.subNet = new PetriNet();
@@ -46,6 +37,7 @@ public class Decomposer {
 
         public void addTransitionAndRaiseNet(Transition transition) {
             subNet.addTransition(transition);
+            decomposed.add(transition.getName());
             for (InboundArc ia: petriNet.inboundArcs(transition)) {
                 subNet.addPlace(ia.getSource());
                 subNet.addArc(ia);
@@ -56,129 +48,89 @@ public class Decomposer {
                 subNet.addArc(oa);
             }
 
-            doPreprocessMap();
+            doPreprocessNet();
+        }
+
+        private void doPreprocessNet() {
+            for (Place place: subNet.getPlaces()) {
+                if (subNet.outboundArcs(place).size() == 0 && inboundArcs(place, subNet).size() != 0) {
+                    outputPlaces.add(place);
+                } else if (inboundArcs(place, subNet).size() == 0 && subNet.outboundArcs(place).size() != 0) {
+                    inputPlaces.add(place);
+                } else {
+                    internalPlaces.add(place);
+                }
+            }
+
+            for (Place p: inputPlaces) {
+                X.addAll(outboundNodes.get(p.getName()));
+            }
+
+            for (Place p: outputPlaces) {
+                Y.addAll(inboundNodes.get(p.getName()));
+            }
+
+            for (Place p: internalPlaces) {
+                Q.addAll(inboundNodes.get(p.getName()));
+                Q.addAll(outboundNodes.get(p.getName()));
+            }
         }
 
         public boolean isComplete() {
-            Collection<Transition> transitions = subNet.getTransitions();
-            for (Transition tr: inboundTransitions) {
-                if (!transitions.contains(tr)) {
-                    return false;
-                }
-            }
+            Collection<Transition> R = getTransitions();
+            if (R.containsAll(X) && R.containsAll(Y) && R.containsAll(Q)) return true;
 
-            for (Transition tr: outboundTransitions) {
-                if (!transitions.contains(tr)) {
-                    return false;
-                }
-            }
+            return false;
+        }
 
-            for (Transition tr: internalTransitions) {
-                if (!transitions.contains(tr)) {
-                    return false;
-                }
-            }
-
-            return true;
+        public Collection<Transition> getTransitions() {
+            return subNet.getTransitions();
         }
 
         public PetriNet getPetriSubNet() {
             return subNet;
         }
 
-        public  ArrayList<Transition> getInboundTransitions() {
-            return this.inboundTransitions;
-        }
-
-        public  ArrayList<Transition> getOutboundTransitions() {
-            return this.outboundTransitions;
-        }
-
-        public  ArrayList<Transition> getInternalTransitions() {
-            return this.internalTransitions;
-        }
-
-        private void doPreprocessMap() {
-            for (Place place: subNet.getPlaces()) {
-                if (subNet.outboundArcs(place).size() == 0 && inboundArcs(place).size() != 0) {
-                    drains.add(place);
-                    for (OutboundArc oa: inboundArcs(place)) {
-                        inboundTransitions.add(oa.getSource());
-                    }
-                } else if (inboundArcs(place).size() == 0 && subNet.outboundArcs(place).size() != 0) {
-                    sources.add(place);
-                    for (InboundArc ia: subNet.outboundArcs(place)) {
-                        outboundTransitions.add(ia.getTarget());
-                    }
-                } else {
-                    internalPlaces.add(place);
-                    for (InboundArc ia: subNet.outboundArcs(place)) {
-                        internalTransitions.add(ia.getTarget());
-                    }
-
-                    for (OutboundArc oa: inboundArcs(place)) {
-                        internalTransitions.add(oa.getSource());
-                    }
-                }
+        public void absorbTransitions() {
+            Collection<Transition> R = getTransitions();
+            HashSet<Transition> absorbed = new HashSet<>();
+            absorbed.addAll(X);
+            absorbed.addAll(Y);
+            absorbed.addAll(Q);
+            absorbed.removeAll(R);
+            for (Transition t: absorbed) {
+                addTransitionAndRaiseNet(t);
             }
         }
-
-        private Collection<OutboundArc> inboundArcs(Place place) {
-            LinkedList<OutboundArc> inbound = new LinkedList<>();
-
-            for (OutboundArc arc : subNet.getOutboundArcs()) {
-                if (arc.getTarget().equals(place)) {
-                    inbound.add(arc);
-                }
-            }
-
-            return inbound;
-        }
-
     }
 
+    private HashSet<String> decomposed = new HashSet<>();
 
+    public HashMap<String, HashSet<Transition>> inboundNodes = new HashMap<>();
 
-
-
-    private HashMap<String, Integer> decomposed = new HashMap<>();
+    public HashMap<String, HashSet<Transition>> outboundNodes = new HashMap<>();
 
     private PetriNet petriNet;
 
     public Decomposer(PetriNet net) {
         if (net == null) throw new IllegalArgumentException("Input Petri net shouldn't be null");
         this.petriNet = net;
+
+        for (Place place: petriNet.getPlaces()) {
+            for (OutboundArc oa: inboundArcs(place, petriNet)) {
+                if (inboundNodes.get(place.getName()) == null) {
+                    inboundNodes.put(place.getName(), new HashSet<Transition>());
+                }
+                inboundNodes.get(place.getName()).add(oa.getSource());
+            }
+            for (InboundArc ia: petriNet.outboundArcs(place)) {
+                if (outboundNodes.get(place.getName()) == null) {
+                    outboundNodes.put(place.getName(), new HashSet<Transition>());
+                }
+                outboundNodes.get(place.getName()).add(ia.getTarget());
+            }
+        }
     }
-
-
-
-
-//    private NodeType isGetNodeType(Connectable node) {
-//        NodeType result = null;
-//        if (node instanceof Place) {
-//            Place p = (Place) node;
-//            if (petriNet.outboundArcs(p).size() == 0 && inboundArcs(p).size() != 0) {
-//                result = NodeType.OUTBOUND;
-//            } else if (inboundArcs(p).size() == 0 && petriNet.outboundArcs(p).size() != 0) {
-//                result = NodeType.INBOUND;
-//            } else {
-//                result = NodeType.INTERNAL;
-//            }
-//        } else if (node instanceof Transition) {
-//            Transition t = (Transition) node;
-//            if (petriNet.outboundArcs(t).size() == 0 && petriNet.inboundArcs(t).size() != 0) {
-//                result = NodeType.OUTBOUND;
-//            } else if (petriNet.inboundArcs(t).size() == 0 && petriNet.outboundArcs(t).size() != 0) {
-//                result = NodeType.INBOUND;
-//            } else {
-//                result = NodeType.INTERNAL;
-//            }
-//        }
-//
-//        return result;
-//    }
-
-
 
     private void saveSubnet(FunctionalSubnet subnet, String fileFullPath) {
         PetriNetIOImpl writer;
@@ -190,33 +142,24 @@ public class Decomposer {
         }
     }
 
+    private Collection<OutboundArc> inboundArcs(Place place, PetriNet net) {
+        LinkedList<OutboundArc> inbound = new LinkedList<>();
+
+        for (OutboundArc arc : net.getOutboundArcs()) {
+            if (arc.getTarget().equals(place)) {
+                inbound.add(arc);
+            }
+        }
+
+        return inbound;
+    }
+
     private void doDecompose(FunctionalSubnet subnet, int id) {
         if (!subnet.isComplete()) {
             ArrayList<Transition>  absorbedTransactions = new ArrayList<>();
             Collection<Transition> R = subnet.getPetriSubNet().getTransitions();
 
-            for (Transition tr: subnet.getInboundTransitions()) {
-                if (!R.contains(tr)) {
-                    absorbedTransactions.add(tr);
-                }
-            }
-
-            for (Transition tr: subnet.getOutboundTransitions()) {
-                if (!R.contains(tr)) {
-                    absorbedTransactions.add(tr);
-                }
-            }
-
-            for (Transition tr: subnet.getInternalTransitions()) {
-                if (!R.contains(tr)) {
-                    absorbedTransactions.add(tr);
-                }
-            }
-
-            for (Transition tr: absorbedTransactions) {
-                decomposed.put(tr.getName(), id);
-                subnet.addTransitionAndRaiseNet(tr);
-            }
+            subnet.absorbTransitions();
 
             doDecompose(subnet, id);
         }
@@ -225,15 +168,15 @@ public class Decomposer {
     public void decomposePetriNet() {
         int i = 0;
         for (Transition transition: petriNet.getTransitions()) {
-            if (decomposed.get(transition.getName()) == null) {
+            if (!decomposed.contains(transition.getName())) {
                 FunctionalSubnet subnet = new FunctionalSubnet(petriNet.getName().getName() + "_" + i);
                 subnet.addTransitionAndRaiseNet(transition);
-                decomposed.put(transition.getName(), i);
                 doDecompose(subnet, i);
                 saveSubnet(subnet, "E://" + petriNet.getName().getName() + "_" + i + ".xml");
                 i++;
             }
         }
     }
+
 
 }

@@ -1,6 +1,5 @@
 package pipe.gui.transformation;
 
-import pipe.gui.decomposition.Decomposer;
 import pipe.gui.widget.StateSpaceLoader;
 import uk.ac.imperial.pipe.io.PetriNetIOImpl;
 import uk.ac.imperial.pipe.models.petrinet.PetriNet;
@@ -16,6 +15,10 @@ import java.io.File;
  * Created by andrii-usov on 05.05.2015.
  */
 public class CPNTransformation {
+
+    public interface ReplaceAction {
+        void replace(PetriNet petriNet);
+    }
 
     private StateSpaceLoader stateSpaceLoader;
 
@@ -45,15 +48,19 @@ public class CPNTransformation {
 
     private File fileToSave;
 
-    public CPNTransformation(FileDialog loadDialog, FileDialog saveDialog) {
+    private ReplaceAction replaceAction;
+
+    public CPNTransformation(FileDialog loadDialog, FileDialog saveDialog, ReplaceAction replaceAction) {
         this.saveDialog = saveDialog;
-        stateSpaceLoader = new StateSpaceLoader(loadDialog);
+        this.stateSpaceLoader = new StateSpaceLoader(loadDialog);
+        this.replaceAction = replaceAction;
         setUp();
     }
 
-    public CPNTransformation(PetriNet petriNet, FileDialog loadDialog, FileDialog saveDialog) {
+    public CPNTransformation(PetriNet petriNet, FileDialog loadDialog, FileDialog saveDialog,  ReplaceAction replaceAction) {
         this.saveDialog = saveDialog;
-        stateSpaceLoader = new StateSpaceLoader(petriNet, loadDialog);
+        this.stateSpaceLoader = new StateSpaceLoader(petriNet, loadDialog);
+        this.replaceAction = replaceAction;
         setUp();
     }
 
@@ -96,8 +103,9 @@ public class CPNTransformation {
                 PetriNet newNet = transformer.getTransformed();
 
                 if (replaceExisting) {
-                    Decomposer d = new Decomposer(net);
-                    d.decomposePetriNet();
+                    if (replaceAction != null) {
+                        replaceAction.replace(newNet);
+                    }
                 } else if (saveToFile && fileToSave != null) {
                     PetriNetIOImpl writer;
                     try {
